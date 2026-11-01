@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Express-based MCP Server using Official MCP TypeScript SDK
  * Implements Apple Store Connect API tools with proper OAuth authentication
@@ -7,27 +8,46 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { HttpTransport } from './transport/HttpTransport.js';
 import { AppStoreConnectClient, type AppStoreConfig } from './appstore-client.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import dotenv from 'dotenv';
+import { readFileSync, realpathSync } from 'fs';
+import { homedir } from 'os';
+import { fileURLToPath } from 'url';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables (quietly: stdout must stay clean in stdio mode)
+dotenv.config({ quiet: true } as any);
+
+// stdio is the default transport. In stdio mode stdout carries the MCP
+// protocol, so every log line must go to stderr instead.
+const USE_HTTP = (process.env.MCP_TRANSPORT || 'stdio').toLowerCase() === 'http';
+if (!USE_HTTP) {
+  console.log = console.error;
+  console.info = console.error;
+  console.warn = console.error;
+}
+
+function expandHome(p: string): string {
+  return p.startsWith('~') ? homedir() + p.slice(1) : p;
+}
 
 // Function to get Apple Store config at runtime
 function getAppStoreConfig(): AppStoreConfig {
   // Apple Store Connect configuration - handle base64 encoded private key
   let privateKey = process.env.APPLE_PRIVATE_KEY || '';
+  const keyPath = process.env.APPLE_PRIVATE_KEY_PATH?.trim();
+  if (!privateKey && keyPath) {
+    privateKey = readFileSync(expandHome(keyPath), 'utf-8');
+  }
   if (!privateKey) {
-    console.error('❌ APPLE_PRIVATE_KEY environment variable is not set!');
+    console.error('❌ Set APPLE_PRIVATE_KEY_PATH (path to your .p8 file) or APPLE_PRIVATE_KEY');
     privateKey = ''; // Prevent crash, will fail when trying to use
   } else {
     privateKey = privateKey.trim();
-    console.log('🔑 Private key starts with:', privateKey.substring(0, 30));
     
     // Check if private key is base64 encoded (Vercel stores it this way)
     if (!privateKey.includes('BEGIN PRIVATE KEY')) {
       try {
         const decoded = Buffer.from(privateKey, 'base64').toString('utf-8').trim();
-        console.log('📝 Decoded key starts with:', decoded.substring(0, 30));
         if (decoded.includes('BEGIN PRIVATE KEY')) {
           privateKey = decoded;
           console.log('✅ Successfully decoded base64 private key');
@@ -850,23 +870,30 @@ ${details.secondarySubcategoryTwo ? `• Secondary Subcategory 2: ${details.seco
  */
 async function main() {
   console.log('🚀 Starting Apple Store Connect MCP Server...');
-  
-  // Validate required environment variables
-  const requiredEnvVars = ['APPLE_KEY_ID', 'APPLE_ISSUER_ID', 'APPLE_PRIVATE_KEY', 'APPLE_BUNDLE_ID'];
-  const missing = requiredEnvVars.filter(envVar => !process.env[envVar]);
-  
+
+  const missing = ['APPLE_KEY_ID', 'APPLE_ISSUER_ID'].filter(v => !process.env[v]);
+  if (!process.env.APPLE_PRIVATE_KEY && !process.env.APPLE_PRIVATE_KEY_PATH) {
+    missing.push('APPLE_PRIVATE_KEY_PATH (or APPLE_PRIVATE_KEY)');
+  }
   if (missing.length > 0) {
     console.error('❌ Missing required environment variables:', missing);
     process.exit(1);
+  }
+
+  if (!USE_HTTP) {
+    const server = createMcpServer();
+    await server.connect(new StdioServerTransport());
+    console.error('✅ Apple Store Connect MCP Server running on stdio');
+    return;
   }
 
   // Create HTTP transport with OAuth (like KMSmcp)
   console.log('🌐 Starting HTTP transport...');
   const httpTransport = new HttpTransport({
     port: parseInt(process.env.PORT || '3001', 10),
-    host: process.env.HOST || '0.0.0.0',
+    host: process.env.HOST || '127.0.0.1',
     cors: {
-      origin: process.env.CORS_ORIGIN || '*',
+      origin: process.env.CORS_ORIGIN || 'http://127.0.0.1',
       credentials: true,
     },
     oauth: process.env.OAUTH_ENABLED === 'true' ? {
@@ -909,7 +936,15 @@ async function main() {
 }
 
 // Start the server if this file is run directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+function isRunDirectly(): boolean {
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isRunDirectly()) {
   main().catch((error) => {
     console.error('💥 Server crashed:', error);
     process.exit(1);

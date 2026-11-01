@@ -10,7 +10,40 @@ Automate TestFlight builds, customer review analysis, app metadata updates, and 
 
 ---
 
-## 💡 Quickstart (npx)
+## ✅ This fork: quick setup (Linux/macOS, Claude Code)
+
+Changes in this fork: runs over **stdio** by default (works with Claude Code / Desktop / Cursor),
+loads the key from a file via `APPLE_PRIVATE_KEY_PATH`, `APPLE_BUNDLE_ID` is optional, logs go to
+stderr, and HTTP mode (`MCP_TRANSPORT=http`) binds to `127.0.0.1` instead of all interfaces.
+
+```bash
+git clone https://github.com/Dospacite/appstore-connect-mcp.git
+cd appstore-connect-mcp
+npm install && npm run build
+./setup.sh   # asks for Key ID, Issuer ID and .p8 path, then registers with Claude Code
+```
+
+Other clients (stdio config):
+
+```json
+{
+  "mcpServers": {
+    "appstore-connect": {
+      "command": "node",
+      "args": ["/absolute/path/to/appstore-connect-mcp/dist/index.js"],
+      "env": {
+        "APPLE_KEY_ID": "YOUR_KEY_ID",
+        "APPLE_ISSUER_ID": "YOUR_ISSUER_ID",
+        "APPLE_PRIVATE_KEY_PATH": "/absolute/path/to/AuthKey_XXXX.p8"
+      }
+    }
+  }
+}
+```
+
+---
+
+## 💡 Quickstart (npx, upstream instructions)
 
 No need to clone or build manually! You can run this MCP server directly using `npx`.
 
