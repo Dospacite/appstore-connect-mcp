@@ -1,29 +1,55 @@
-# 🍎 App Store Connect MCP Server
+# App Store Connect MCP Server
 
-[![npm version](https://img.shields.io/npm/v/@ryaker/appstore-connect-mcp.svg)](https://www.npmjs.com/package/@ryaker/appstore-connect-mcp)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
+An end-to-end [Model Context Protocol](https://modelcontextprotocol.io) server for Apple's
+App Store Connect API. It lets an AI assistant (Claude Code, Claude Desktop, Cursor, VS Code)
+set up and run apps on the App Store: metadata, screenshots, pricing, in-app purchases,
+subscriptions and offers, TestFlight, build uploads, review submission, code signing, users,
+reports and webhooks.
 
-A Model Context Protocol (MCP) server that connects AI assistants like **Claude Desktop**, **Cursor**, **Windsurf**, and **VS Code** to the **Apple App Store Connect API**. 
+Fork of [ryaker/appstore-connect-mcp](https://github.com/ryaker/appstore-connect-mcp), rewritten.
 
-Automate TestFlight builds, customer review analysis, app metadata updates, and sales reports directly inside your AI coding workflow.
+## What it covers
 
----
+**Every API endpoint.** Apple's OpenAPI spec (v4.5.1, ~1,300 operations) ships with the server.
+`api_search` finds an operation, `api_describe` shows its exact parameters and body (allowed
+values included), and `api_request` calls it. Game Center, App Clips, Xcode Cloud workflow
+editing, alternative distribution and anything else without a dedicated tool go through these.
 
-## ✅ This fork: quick setup (Linux/macOS, Claude Code)
+**179 workflow tools** that do whole jobs in one call:
 
-Changes in this fork: runs over **stdio** by default (works with Claude Code / Desktop / Cursor),
-loads the key from a file via `APPLE_PRIVATE_KEY_PATH`, `APPLE_BUNDLE_ID` is optional, logs go to
-stderr, and HTTP mode (`MCP_TRANSPORT=http`) binds to `127.0.0.1` instead of all interfaces.
+| Toolset | Tools |
+| --- | --- |
+| `metadata` | apps, app info and categories, age rating, versions, store text for many locales at once, build attachment, App Review details, phased release, manual release, readiness check, submit / cancel review, EULA |
+| `media` | screenshots (upload many locales and sizes, replace, reorder, copy between locales), app previews, review attachments, routing coverage, custom product pages, in-app events, product page optimization experiments |
+| `monetization` | territories, app price and availability, in-app purchases, subscription groups and subscriptions, prices in every territory from one base price, introductory / promotional / win-back offers, offer codes, promoted purchases |
+| `testflight` | builds, `.ipa` / `.pkg` upload over the API (no Xcode or Transporter needed), export compliance, beta groups and testers, What to Test, beta review, feedback and crash logs, Xcode Cloud builds, sandbox testers |
+| `account` | bundle IDs and capabilities, certificates (key and CSR made locally with openssl, `.p12` export), provisioning profiles, devices, users and invitations, customer reviews and replies, sales / finance / analytics reports, performance metrics and diagnostics, webhooks |
+
+**Safety.**
+- Every write tool takes `dry_run: true`. Reads still run, and the writes it would send come back without being sent.
+- Public or irreversible actions need `confirm: true`. That covers submitting, releasing, deleting, revoking, sending invites and replying to reviews.
+- Credentials only go to `api.appstoreconnect.apple.com`.
+
+**What Apple's API can't do** (do these once on the App Store Connect website): create a new
+app record, fill in App Privacy labels, accept agreements / tax / banking, read Resolution Center
+messages.
+
+## Setup
+
+1. In [App Store Connect](https://appstoreconnect.apple.com), open **Users and Access → Integrations →
+   App Store Connect API → Team Keys**. Create a key and download the `.p8` file. Note the Key ID
+   and the Issuer ID.
+   - Use the **Admin** role for everything, or **App Manager** if you don't need users, signing or finance.
+2. Build and register:
 
 ```bash
 git clone https://github.com/Dospacite/appstore-connect-mcp.git
 cd appstore-connect-mcp
-npm install && npm run build
-./setup.sh   # asks for Key ID, Issuer ID and .p8 path, then registers with Claude Code
+npm install            # also builds
+./setup.sh             # asks for Key ID, Issuer ID and .p8 path; registers with Claude Code
 ```
 
-Other clients (stdio config):
+Other clients: add a stdio server.
 
 ```json
 {
@@ -41,124 +67,38 @@ Other clients (stdio config):
 }
 ```
 
----
+## Configuration
 
-## 💡 Quickstart (npx, upstream instructions)
-
-No need to clone or build manually! You can run this MCP server directly using `npx`.
-
-### 1. Generate App Store Connect API Key
-1. Log into [App Store Connect](https://appstoreconnect.apple.com/).
-2. Navigate to **Users and Access** ➔ **Integrations** ➔ **App Store Connect API**.
-3. Click **Generate API Key** (Admin or App Manager role recommended).
-4. Download the `.p8` key file and note your **Key ID** and **Issuer ID**.
-
----
-
-### 2. Add to Your MCP Client
-
-#### 🟢 Claude Desktop
-Add this to `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "appstore-connect": {
-      "command": "npx",
-      "args": ["-y", "@ryaker/appstore-connect-mcp"],
-      "env": {
-        "APPLE_KEY_ID": "YOUR_KEY_ID",
-        "APPLE_ISSUER_ID": "YOUR_ISSUER_ID",
-        "APPLE_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
-      }
-    }
-  }
-}
-```
-⚡ Cursor
-Add this to ~/.cursor/mcp.json or under Cursor Settings ➔ Features ➔ MCP:
-```json
-{
-  "mcpServers": {
-    "appstore-connect": {
-      "command": "npx",
-      "args": ["-y", "@ryaker/appstore-connect-mcp"],
-      "env": {
-        "APPLE_KEY_ID": "YOUR_KEY_ID",
-        "APPLE_ISSUER_ID": "YOUR_ISSUER_ID",
-        "APPLE_PRIVATE_KEY": "YOUR_PRIVATE_KEY_BASE64_OR_RAW"
-      }
-    }
-  }
-}
-```
-🏄 Windsurf
-Add this to ~/.codeium/windsurf/mcp_config.json:
-```json
-JSON
-{
-  "mcpServers": {
-    "appstore-connect": {
-      "command": "npx",
-      "args": ["-y", "@ryaker/appstore-connect-mcp"],
-      "env": {
-        "APPLE_KEY_ID": "YOUR_KEY_ID",
-        "APPLE_ISSUER_ID": "YOUR_ISSUER_ID",
-        "APPLE_PRIVATE_KEY": "YOUR_PRIVATE_KEY"
-      }
-    }
-  }
-}
-```
-🛠️ Features
-📱 App Management: View apps, query version statuses, edit localizations & release notes.
-
-✈️ TestFlight Integration: List builds, manage beta testing groups, and add/remove beta testers.
-
-💬 Customer Reviews: Read, summarize, and draft responses to user reviews.
-
-📊 Analytics & Sales: Retrieve unit downloads, revenue metrics, and regional performance.
-
-🔐 Dual Auth Support: Supports direct local API Key authentication or remote OAuth 2.0 (via Auth0).
-
-💬 Example Prompts
-Once configured, try asking your AI assistant:
-
-"Show me the latest TestFlight builds for my app and their processing status."
-
-"What are the most recent 1-star reviews on the App Store and summarize user complaints?"
-
-"Update the release notes for version 1.2.0 in English (US)."
-
-"Give me a summary of app downloads for the past 14 days."
-
-🔑 Environment Variables
 | Variable | Required | Description |
-| :--- | :--- | :--- |
-| `APPLE_KEY_ID` | **Yes** | Your App Store Connect API Key ID |
-| `APPLE_ISSUER_ID` | **Yes** | Your App Store Connect Issuer ID |
-| `APPLE_PRIVATE_KEY` | **Yes** | Raw PEM content or Base64-encoded string of your `.p8` key |
-| `APPLE_BUNDLE_ID` | Optional | Restrict tool scope to a specific app bundle ID |
-| `APPLE_APP_STORE_ID` | Optional | Restrict tool scope to a specific App Store ID |
-| `OAUTH_ENABLED` | Optional | Set `true` if deploying as a remote server via OAuth 2.0 |
+| --- | --- | --- |
+| `APPLE_KEY_ID` | yes | API key ID |
+| `APPLE_ISSUER_ID` | yes | Issuer ID |
+| `APPLE_PRIVATE_KEY_PATH` | yes* | Path to the `.p8` file (*or `APPLE_PRIVATE_KEY` with its contents) |
+| `APPLE_VENDOR_NUMBER` | no | Needed for sales and finance reports (Payments and Financial Reports page) |
+| `ASC_OUTPUT_DIR` | no | Where reports, certificates and profiles are saved (default `~/Downloads/appstore-connect-mcp`) |
+| `ASC_TOOLSETS` | no | Comma list to expose fewer tools, e.g. `metadata,media,testflight`. The 4 generic tools are always on. Useful for clients that load every tool definition up front (all 183 are about 50k tokens). |
+| `MCP_TRANSPORT` | no | `http` to serve over HTTP on `127.0.0.1:${PORT:-3001}/mcp` instead of stdio |
 
-💻 Local Development
-If you want to contribute or modify the source code locally:
+## Example requests
 
-Bash
+- "Give me an overview of my app and tell me what's blocking submission."
+- "Create version 1.1, write release notes in English, German and Japanese, attach the latest build, and submit it once I approve."
+- "Upload the screenshots in ~/shots/iphone and ~/shots/ipad for en-US, replacing the old ones, then copy them to de-DE."
+- "Add a monthly subscription at $4.99 in every territory with a one-week free trial."
+- "Upload ~/build/App.ipa, give it to the Beta Testers group, set What to Test, and submit for beta review."
+- "Create an App Store distribution certificate and profile for com.example.app."
+- "Download last month's sales report and summarize units by product."
+
+## Development
+
 ```bash
-# 1. Clone repo
-git clone [https://github.com/ryaker/appstore-connect-mcp.git](https://github.com/ryaker/appstore-connect-mcp.git)
-cd appstore-connect-mcp
-
-# 2. Install & build
-npm install
 npm run build
-
-# 3. Test locally
-npm start
+npx tsx scripts/try-tool.ts src/tools/metadata.ts app_overview '{"app":"com.example.app"}'
+node scripts/smoke.mjs      # end-to-end test over stdio (reads + dry runs)
+npm run update-spec         # refresh Apple's OpenAPI spec
 ```
-🤝 Contributing & Support
-Feel free to open an Issue for bug reports, missing App Store Connect endpoints, or feature requests!
+
+Code layout: `src/asc/` (API client, spec index, formatting), `src/tools/` (one file per
+toolset, conventions in `src/tools/CONVENTIONS.md`), `src/server.ts` (dispatch, dry run).
 
 License: MIT
